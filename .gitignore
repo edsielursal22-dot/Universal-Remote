@@ -1,0 +1,11 @@
+# Runtime and local configuration
+/storage/*.sqlite
+/storage/*.sqlite-*
+.env
+.env.*
+!.env.example
+
+# OS/editor artifacts
+.DS_Store
+.vscode/
+.idea/
