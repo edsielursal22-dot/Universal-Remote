@@ -2,20 +2,16 @@
 declare(strict_types=1);
 
 // ============================================================
-// PARA SA MAESTRO: TANAN SQL TRANSACTION ANHI LANG TAN-AWA
-// Kini nga file ang demo sa duha ka video.
+// Centralized SQL transaction helper.
+// Demonstrates COMMIT, ROLLBACK, SAVEPOINT, and AUTOCOMMIT behavior.
 //
-// Video 1: COMMIT, ROLLBACK, SAVEPOINT
-// Video 2: AUTOCOMMIT, COMMIT, ROLLBACK
+// - PDO runs with AUTOCOMMIT=1 by default (each query auto-saves).
+// - beginTransaction() starts BEGIN / START TRANSACTION and
+//   disables autocommit until COMMIT or ROLLBACK.
+// - On success, commit() persists all queries (COMMIT).
+// - On failure, rollBack() discards all queries (ROLLBACK, all-or-nothing).
 //
-// - Ang PDO naka-AUTOCOMMIT=1 by default (kada query auto-save).
-// - Ang beginTransaction() = BEGIN / START TRANSACTION:
-//   gipalong ang autocommit hangtod mag COMMIT o ROLLBACK.
-// - Kung success tanan queries -> commit() = COMMIT (ma-save).
-// - Kung naay bisan usa nga palpak -> rollBack() = ROLLBACK
-//   (walay ma-save, balik sa dati — all-or-nothing).
-//
-// Gigamit kini sa classes/RemoteRepository.php:
+// Used by classes/RemoteRepository.php:
 //   Transaction::run($conn, fn() => ...)
 //   Transaction::savepoint($conn, 'apps_batch', fn() => ...)
 // ============================================================
@@ -23,7 +19,7 @@ declare(strict_types=1);
 final class Transaction
 {
     /**
-     * Video 1 + 2: BEGIN -> COMMIT kung success, ROLLBACK kung palpak.
+     * Run work inside BEGIN -> COMMIT on success, ROLLBACK on failure.
      */
     public static function run(PDO $conn, callable $work): mixed
     {
@@ -41,9 +37,8 @@ final class Transaction
     }
 
     /**
-     * Video 1: SAVEPOINT — partial rollback.
-     * Kung palpak ang sulod, kana rang batch ang ma-undo
-     * (ROLLBACK TO SAVEPOINT), dili apil ang nauna.
+     * SAVEPOINT for partial rollback.
+     * On failure, only this batch is undone (ROLLBACK TO SAVEPOINT).
      */
     public static function savepoint(PDO $conn, string $name, callable $work): void
     {

@@ -4,21 +4,20 @@ declare(strict_types=1);
 /**
  * Database bootstrap.
  *
- * Local (XAMPP) = SQLite automatic, walay setup.
- * InfinityFree (hosting) = MySQL automatic, gamiton ang config sa ubos.
- * Pwede gihapon ma-override pinaagi sa env: DB_DRIVER, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASS.
+ * Local (XAMPP) = SQLite automatically, no setup required.
+ * Hosting (InfinityFree) = MySQL automatically using the config below.
+ * Can be overridden via env: DB_DRIVER, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASS.
  */
 
-// >>> EDIT MO NI SA FILE MANAGER KUNG LAHI IMONG DB NAME <<<
-// Tan-awa sa InfinityFree > MySQL Databases > Database Name.
+// Hosting database name — see InfinityFree > MySQL Databases > Database Name.
 $INFINITY_DB_NAME = (string) (getenv('DB_NAME') ?: 'if0_43164779_remotee');
 $INFINITY_DB_USER = (string) (getenv('DB_USER') ?: 'if0_43164779');
 $INFINITY_DB_PASS = (string) (getenv('DB_PASS') ?: 'CHANGE_ME_IN_HOSTING');
 $INFINITY_DB_HOST = (string) (getenv('DB_HOST') ?: 'sql303.infinityfree.com');
 $INFINITY_DB_PORT = (string) (getenv('DB_PORT') ?: '3306');
 
-// Detect kung naa nata sa InfinityFree hosting.
-// Compat sa daan nga PHP (walay str_contains sa PHP 7).
+// Detect hosting environment.
+// Uses stripos for compatibility with older PHP versions.
 $httpHost = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
 $isHosting = stripos($httpHost, 'infinityfree') !== false
     || stripos($httpHost, 'epizy') !== false
@@ -36,7 +35,7 @@ if ($driver !== 'mysql' && !is_dir($dbDirectory)) {
 try {
     if ($driver === 'mysql') {
         if ($isHosting) {
-            // Naa ta sa InfinityFree — gamiton jud ang config sa taas.
+            // On hosting, use the InfinityFree config above.
             $host = $INFINITY_DB_HOST;
             $port = $INFINITY_DB_PORT;
             $name = $INFINITY_DB_NAME;
@@ -65,18 +64,6 @@ try {
 } catch (PDOException $exception) {
     http_response_code(500);
     error_log('Universal Remote database connection failed: ' . $exception->getMessage());
-    // Debug mode: ablihi ang site nga naay ?dbdebug=1 para makita ang tinuod nga error.
-    // E.g. remotee.infinityfreeapp.com/?dbdebug=1 — tangtangon ra ni after ma-fix.
-    if (isset($_GET['dbdebug'])) {
-        header('Content-Type: text/plain; charset=utf-8');
-        exit('DB DEBUG driver=' . ($driver ?? '?')
-            . ' host=' . ($host ?? '?')
-            . ' port=' . ($port ?? '?')
-            . ' db=' . ($name ?? '?')
-            . ' user=' . ($user ?? '?')
-            . ' http_host=' . $httpHost
-            . ' | PDO error: ' . $exception->getMessage());
-    }
     exit('The application could not connect to its data store. Check your database configuration.');
 }
 ?>
