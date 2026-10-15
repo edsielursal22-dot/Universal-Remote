@@ -82,8 +82,22 @@ try {
         if (strlen($name) < 2 || strlen($name) > 80 || strlen($type) < 2 || strlen($type) > 50 || strlen($brand) < 2 || strlen($brand) > 50) {
             respond(['ok' => false, 'message' => 'Enter a device name, type, and brand using the suggested lengths.'], 422);
         }
+        // Uses a SQL transaction internally (BEGIN -> COMMIT / ROLLBACK).
         $id = $repository->createDevice($name, $type, $brand);
         respond(['ok' => true, 'data' => ['deviceId' => $id, 'message' => 'Device added']]);
+    }
+
+    if ($action === 'add-device-with-apps') {
+        $name = trim((string) ($payload['name'] ?? ''));
+        $type = trim((string) ($payload['type'] ?? ''));
+        $brand = trim((string) ($payload['brand'] ?? ''));
+        $apps = is_array($payload['apps'] ?? null) ? $payload['apps'] : [];
+        if (strlen($name) < 2 || strlen($name) > 80 || strlen($type) < 2 || strlen($type) > 50 || strlen($brand) < 2 || strlen($brand) > 50) {
+            respond(['ok' => false, 'message' => 'Enter a device name, type, and brand using the suggested lengths.'], 422);
+        }
+        // Demonstrates BEGIN + SAVEPOINT + COMMIT / ROLLBACK TO SAVEPOINT.
+        $id = $repository->createDeviceWithApps($name, $type, $brand, $apps);
+        respond(['ok' => true, 'data' => ['deviceId' => $id, 'message' => 'Device added with apps']]);
     }
 
     respond(['ok' => false, 'message' => 'That action is not available.'], 400);

@@ -1,8 +1,13 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/Transaction.php';
+
 final class RemoteRepository
 {
+    // NOTE sa maestro: ang tanan SQL transaction (COMMIT / ROLLBACK /
+    // SAVEPOINT / AUTOCOMMIT) naa sa classes/Transaction.php.
+    // Ang mga methods sa ubos naggamit lang ug Transaction::run().
     public function __construct(private PDO $conn)
     {
         $this->ensureSchema();
@@ -30,20 +35,72 @@ final class RemoteRepository
 
     public function createDevice(string $name, string $type, string $brand): int
     {
-        $statement = $this->conn->prepare(
-            'INSERT INTO devices (device_name, device_type, brand, connection_status, source_input)
-             VALUES (:name, :type, :brand, :status, :source)'
-        );
-        $statement->execute([
-            ':name' => $name,
-            ':type' => $type,
-            ':brand' => $brand,
-            ':status' => 'pairing',
-            ':source' => 'Not set',
-        ]);
-        $id = (int) $this->conn->lastInsertId();
-        $this->logAction($id, 'Device added');
-        return $id;
+        return Transaction::run($this->conn, function () use ($name, $type, $brand): int {
+            $statement = $this->conn->prepare(
+                'INSERT INTO devices (device_name, device_type, brand, connection_status, source_input)
+                 VALUES (:name, :type, :brand, :status, :source)'
+            );
+            $statement->execute([
+                ':name' => $name,
+                ':type' => $type,
+                ':brand' => $brand,
+                ':status' => 'pairing',
+                ':source' => 'Not set',
+            ]);
+            $id = (int) $this->conn->lastInsertId();
+            $this->logAction($id, 'Device added');
+            return $id;
+        });
+    }
+
+    /**
+     * Transaction + SAVEPOINT demo (from video 1).
+     * Inserts the device, then tries to insert app shortcuts.
+     * If an app row fails, we ROLLBACK TO SAVEPOINT so the device is kept
+     * but the bad app batch is undone — then COMMIT.
+     */
+    /**
+     * SAVEPOINT demo: device ma-save, apan ang palpak nga apps batch
+     * ma-ROLLBACK TO SAVEPOINT ra — tan-awa classes/Transaction.php.
+     */
+    public function createDeviceWithApps(string $name, string $type, string $brand, array $apps): int
+    {
+        return Transaction::run($this->conn, function () use ($name, $type, $brand, $apps): int {
+            $statement = $this->conn->prepare(
+                'INSERT INTO devices (device_name, device_type, brand, connection_status, source_input)
+                 VALUES (:name, :type, :brand, :status, :source)'
+            );
+            $statement->execute([
+                ':name' => $name,
+                ':type' => $type,
+                ':brand' => $brand,
+                ':status' => 'pairing',
+                ':source' => 'Not set',
+            ]);
+            $id = (int) $this->conn->lastInsertId();
+            $this->logAction($id, 'Device added');
+
+            try {
+                Transaction::savepoint($this->conn, 'apps_batch', function () use ($id, $apps): void {
+                    $appInsert = $this->conn->prepare(
+                        'INSERT INTO app_shortcuts (device_id, app_name, app_icon, launch_url)
+                         VALUES (:device, :name, :icon, :url)'
+                    );
+                    foreach ($apps as $app) {
+                        $appInsert->execute([
+                            ':device' => $id,
+                            ':name' => (string) ($app['name'] ?? ''),
+                            ':icon' => (string) ($app['icon'] ?? 'app'),
+                            ':url' => $app['url'] ?? null,
+                        ]);
+                    }
+                });
+            } catch (Throwable $exception) {
+                $this->logAction($id, 'App shortcuts skipped (rolled back to savepoint)');
+            }
+
+            return $id;
+        });
     }
 
     public function disconnectDevice(int $deviceId): array
@@ -51,10 +108,12 @@ final class RemoteRepository
         if (!$this->deviceExists($deviceId)) {
             throw new InvalidArgumentException('The selected device could not be found.');
         }
-        $statement = $this->conn->prepare('UPDATE devices SET connection_status = :status WHERE device_id = :id');
-        $statement->execute([':status' => 'offline', ':id' => $deviceId]);
-        $this->logAction($deviceId, 'Device disconnected');
-        return ['deviceId' => $deviceId, 'message' => 'Device disconnected'];
+        return Transaction::run($this->conn, function () use ($deviceId): array {
+            $statement = $this->conn->prepare('UPDATE devices SET connection_status = :status WHERE device_id = :id');
+            $statement->execute([':status' => 'offline', ':id' => $deviceId]);
+            $this->logAction($deviceId, 'Device disconnected');
+            return ['deviceId' => $deviceId, 'message' => 'Device disconnected'];
+        });
     }
 
     public function connectDevice(int $deviceId): array
@@ -62,10 +121,12 @@ final class RemoteRepository
         if (!$this->deviceExists($deviceId)) {
             throw new InvalidArgumentException('The selected device could not be found.');
         }
-        $statement = $this->conn->prepare('UPDATE devices SET connection_status = :status WHERE device_id = :id');
-        $statement->execute([':status' => 'connected', ':id' => $deviceId]);
-        $this->logAction($deviceId, 'Device connected');
-        return ['deviceId' => $deviceId, 'message' => 'Device connected'];
+        return Transaction::run($this->conn, function () use ($deviceId): array {
+            $statement = $this->conn->prepare('UPDATE devices SET connection_status = :status WHERE device_id = :id');
+            $statement->execute([':status' => 'connected', ':id' => $deviceId]);
+            $this->logAction($deviceId, 'Device connected');
+            return ['deviceId' => $deviceId, 'message' => 'Device connected'];
+        });
     }
 
     public function removeDevice(int $deviceId): array
@@ -73,9 +134,12 @@ final class RemoteRepository
         if (!$this->deviceExists($deviceId)) {
             throw new InvalidArgumentException('The selected device could not be found.');
         }
-        $statement = $this->conn->prepare('DELETE FROM devices WHERE device_id = :id');
-        $statement->execute([':id' => $deviceId]);
-        return ['deviceId' => $deviceId, 'message' => 'Device removed'];
+        // DELETE + cascaded rows (layouts/buttons/logs) = all-or-nothing.
+        return Transaction::run($this->conn, function () use ($deviceId): array {
+            $statement = $this->conn->prepare('DELETE FROM devices WHERE device_id = :id');
+            $statement->execute([':id' => $deviceId]);
+            return ['deviceId' => $deviceId, 'message' => 'Device removed'];
+        });
     }
 
     public function runCommand(int $deviceId, string $command): array
@@ -102,7 +166,9 @@ final class RemoteRepository
             throw new InvalidArgumentException('The selected device could not be found.');
         }
 
-        $this->logAction($deviceId, $allowed[$command]);
+        Transaction::run($this->conn, function () use ($deviceId, $allowed, $command): void {
+            $this->logAction($deviceId, $allowed[$command]);
+        });
         return ['command' => $command, 'message' => $allowed[$command]];
     }
 
@@ -114,21 +180,23 @@ final class RemoteRepository
         if (!$this->themeExists($themeId)) {
             throw new InvalidArgumentException('The selected theme could not be found.');
         }
-        if ($this->driver() === 'mysql') {
-            $statement = $this->conn->prepare(
-                'INSERT INTO settings (device_id, setting_name, setting_value)
-                 VALUES (:device, :name, :value)
-                 ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)'
-            );
-        } else {
-            $statement = $this->conn->prepare(
-                'INSERT INTO settings (device_id, setting_name, setting_value)
-                 VALUES (:device, :name, :value)
-                 ON CONFLICT(device_id, setting_name) DO UPDATE SET setting_value = excluded.setting_value'
-            );
-        }
-        $statement->execute([':device' => $deviceId, ':name' => 'theme_id', ':value' => (string) $themeId]);
-        $this->logAction($deviceId, 'Theme updated');
+        Transaction::run($this->conn, function () use ($deviceId, $themeId): void {
+            if ($this->driver() === 'mysql') {
+                $statement = $this->conn->prepare(
+                    'INSERT INTO settings (device_id, setting_name, setting_value)
+                     VALUES (:device, :name, :value)
+                     ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)'
+                );
+            } else {
+                $statement = $this->conn->prepare(
+                    'INSERT INTO settings (device_id, setting_name, setting_value)
+                     VALUES (:device, :name, :value)
+                     ON CONFLICT(device_id, setting_name) DO UPDATE SET setting_value = excluded.setting_value'
+                );
+            }
+            $statement->execute([':device' => $deviceId, ':name' => 'theme_id', ':value' => (string) $themeId]);
+            $this->logAction($deviceId, 'Theme updated');
+        });
     }
 
     private function logAction(int $deviceId, string $action): void
@@ -169,12 +237,19 @@ final class RemoteRepository
             return;
         }
 
+        // Needed so ON DELETE CASCADE works in SQLite (off by default).
+        $this->conn->exec('PRAGMA foreign_keys = ON');
+
         $statements = [
             'CREATE TABLE IF NOT EXISTS devices (device_id INTEGER PRIMARY KEY AUTOINCREMENT, device_name TEXT NOT NULL, device_type TEXT NOT NULL, brand TEXT NOT NULL, connection_status TEXT NOT NULL DEFAULT "connected", source_input TEXT NOT NULL DEFAULT "HDMI 1", created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)',
             'CREATE TABLE IF NOT EXISTS themes (theme_id INTEGER PRIMARY KEY AUTOINCREMENT, theme_name TEXT NOT NULL UNIQUE, color_scheme TEXT NOT NULL DEFAULT "midnight")',
+            'CREATE TABLE IF NOT EXISTS remote_layouts (layout_id INTEGER PRIMARY KEY AUTOINCREMENT, device_id INTEGER NOT NULL, theme_id INTEGER NULL, layout_name TEXT NOT NULL, mode TEXT NOT NULL DEFAULT "standard", FOREIGN KEY(device_id) REFERENCES devices(device_id) ON DELETE CASCADE, FOREIGN KEY(theme_id) REFERENCES themes(theme_id) ON DELETE SET NULL)',
+            'CREATE TABLE IF NOT EXISTS buttons (button_id INTEGER PRIMARY KEY AUTOINCREMENT, layout_id INTEGER NOT NULL, button_label TEXT NOT NULL, button_function TEXT NOT NULL, position_order INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(layout_id) REFERENCES remote_layouts(layout_id) ON DELETE CASCADE)',
             'CREATE TABLE IF NOT EXISTS settings (setting_id INTEGER PRIMARY KEY AUTOINCREMENT, device_id INTEGER NOT NULL, setting_name TEXT NOT NULL, setting_value TEXT NOT NULL, UNIQUE(device_id, setting_name), FOREIGN KEY(device_id) REFERENCES devices(device_id) ON DELETE CASCADE)',
             'CREATE TABLE IF NOT EXISTS app_shortcuts (app_id INTEGER PRIMARY KEY AUTOINCREMENT, device_id INTEGER NOT NULL, app_name TEXT NOT NULL, app_icon TEXT NOT NULL DEFAULT "app", launch_url TEXT, FOREIGN KEY(device_id) REFERENCES devices(device_id) ON DELETE CASCADE)',
+            'CREATE TABLE IF NOT EXISTS channels (channel_id INTEGER PRIMARY KEY AUTOINCREMENT, device_id INTEGER NOT NULL, channel_number TEXT NOT NULL, channel_name TEXT NOT NULL, FOREIGN KEY(device_id) REFERENCES devices(device_id) ON DELETE CASCADE)',
             'CREATE TABLE IF NOT EXISTS activity_logs (log_id INTEGER PRIMARY KEY AUTOINCREMENT, device_id INTEGER NOT NULL, action TEXT NOT NULL, timestamp TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(device_id) REFERENCES devices(device_id) ON DELETE CASCADE)',
+            'CREATE INDEX IF NOT EXISTS idx_log_device_time ON activity_logs (device_id, timestamp)',
         ];
         foreach ($statements as $statement) {
             $this->conn->exec($statement);
