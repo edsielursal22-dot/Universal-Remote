@@ -5,10 +5,7 @@ require_once __DIR__ . '/Transaction.php';
 
 final class RemoteRepository
 {
-    // All SQL transactions (COMMIT / ROLLBACK / SAVEPOINT / AUTOCOMMIT)
-    // are centralized in classes/Transaction.php.
-    // The methods below use Transaction::run().
-    public function __construct(private PDO $conn)
+       public function __construct(private PDO $conn)
     {
         $this->ensureSchema();
     }
@@ -53,13 +50,7 @@ final class RemoteRepository
         });
     }
 
-    /**
-     * Transaction + SAVEPOINT demo.
-     * Inserts the device, then tries to insert app shortcuts.
-     * If an app row fails, we ROLLBACK TO SAVEPOINT so the device is kept
-     * but the bad app batch is undone — then COMMIT.
-     * See classes/Transaction.php.
-     */
+    
     public function createDeviceWithApps(string $name, string $type, string $brand, array $apps): int
     {
         return Transaction::run($this->conn, function () use ($name, $type, $brand, $apps): int {

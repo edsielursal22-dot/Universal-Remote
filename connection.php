@@ -1,29 +1,20 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Database bootstrap.
- *
- * Local (XAMPP) = SQLite automatically, no setup required.
- * Hosting (InfinityFree) = MySQL automatically using the config below.
- * Can be overridden via env: DB_DRIVER, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASS.
- */
 
-// Hosting database name — see InfinityFree > MySQL Databases > Database Name.
-$INFINITY_DB_NAME = (string) (getenv('DB_NAME') ?: 'if0_43164779_remotee');
+$INFINITY_DB_NAME = (string) (getenv('DB_NAME') ?: 'if0_43164779_XXX');
 $INFINITY_DB_USER = (string) (getenv('DB_USER') ?: 'if0_43164779');
-$INFINITY_DB_PASS = (string) (getenv('DB_PASS') ?: 'CHANGE_ME_IN_HOSTING');
+$INFINITY_DB_PASS = (string) (getenv('DB_PASS') ?: 'B1UaYPU5JpdV7e');
 $INFINITY_DB_HOST = (string) (getenv('DB_HOST') ?: 'sql303.infinityfree.com');
 $INFINITY_DB_PORT = (string) (getenv('DB_PORT') ?: '3306');
 
-// Detect hosting environment.
-// Uses stripos for compatibility with older PHP versions.
+// Detect kung naa nata sa InfinityFree hosting.
 $httpHost = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
-$isHosting = stripos($httpHost, 'infinityfree') !== false
-    || stripos($httpHost, 'epizy') !== false
-    || stripos($httpHost, 'rf.gd') !== false
-    || stripos($httpHost, 'ezy.ro') !== false
-    || stripos($httpHost, 'great-site') !== false;
+$isHosting = str_contains($httpHost, 'infinityfree')
+    || str_contains($httpHost, 'epizy')
+    || str_contains($httpHost, 'rf.gd')
+    || str_contains($httpHost, 'ezy.ro')
+    || str_contains($httpHost, 'great-site');
 
 $driver = strtolower((string) (getenv('DB_DRIVER') ?: ($isHosting ? 'mysql' : 'sqlite')));
 $dbDirectory = __DIR__ . '/storage';
@@ -34,20 +25,20 @@ if ($driver !== 'mysql' && !is_dir($dbDirectory)) {
 
 try {
     if ($driver === 'mysql') {
-        if ($isHosting) {
-            // On hosting, use the InfinityFree config above.
+       
+        $isLocalMysql = !$isHosting && $INFINITY_DB_HOST === 'sql303.infinityfree.com' && getenv('DB_HOST') === false;
+        if ($isLocalMysql && getenv('DB_NAME') === false) {
+            $host = '127.0.0.1';
+            $port = '3306';
+            $name = 'mobileremote_db';
+            $user = 'root';
+            $pass = '';
+        } else {
             $host = $INFINITY_DB_HOST;
             $port = $INFINITY_DB_PORT;
             $name = $INFINITY_DB_NAME;
             $user = $INFINITY_DB_USER;
             $pass = $INFINITY_DB_PASS;
-        } else {
-            // Local XAMPP MySQL.
-            $host = (string) (getenv('DB_HOST') ?: '127.0.0.1');
-            $port = (string) (getenv('DB_PORT') ?: '3306');
-            $name = (string) (getenv('DB_NAME') ?: 'mobileremote_db');
-            $user = (string) (getenv('DB_USER') ?: 'root');
-            $pass = (string) (getenv('DB_PASS') ?: '');
         }
         $dsn = "mysql:host={$host};port={$port};dbname={$name};charset=utf8mb4";
     } else {
