@@ -80,4 +80,4 @@ INSERT IGNORE INTO devices (device_id, device_name, device_type, brand, connecti
 (1, 'Living room TV', 'Smart TV', 'Samsung', 'connected', 'HDMI 1'),
 (2, 'Bedroom TV', 'Smart TV', 'LG', 'offline', 'HDMI 2'),
 (3, 'Soundbar', 'Audio', 'Sonos', 'connected', 'Optical','HDMI 1',
-(4, 'Projector', 'Projector', 'Epson', 'pairing', 'HDMI 1');
+(4, 'Projector', 'Projector', 'Epson', 'pairing', 'HDMI 1','Iloveyou');
