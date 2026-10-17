@@ -55,7 +55,7 @@ try {
 } catch (PDOException $exception) {
     http_response_code(500);
     error_log('Universal Remote database connection failed: ' . $exception->getMessage());
-    exit('The application could not connect to its data store. Check your database configuration.');
+    exit('The application could not connect to its data store. pls Check your database configuration.');
 }
 ?>
 
