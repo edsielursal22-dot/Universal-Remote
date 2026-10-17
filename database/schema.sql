@@ -79,4 +79,5 @@ INSERT IGNORE INTO themes (theme_id, theme_name, color_scheme) VALUES
 INSERT IGNORE INTO devices (device_id, device_name, device_type, brand, connection_status, source_input) VALUES
 (1, 'Living room TV', 'Smart TV', 'Samsung', 'connected', 'HDMI 1'),
 (2, 'Bedroom TV', 'Smart TV', 'LG', 'offline', 'HDMI 2'),
-(3, 'Soundbar', 'Audio', 'Sonos', 'connected', 'Optical','iloveyou');
+(3, 'Soundbar', 'Audio', 'Sonos', 'connected', 'Optical','HDMI 1',
+(4, 'Projector', 'Projector', 'Epson', 'pairing', 'HDMI 1');
